@@ -16,10 +16,10 @@ export function createFarmMap(): GameMap {
       // 边界碰撞
       const isBorder = col <= 0 || col >= W - 1 || row <= 0 || row >= H - 1;
 
-      // 水塘碰撞
+      // 水塘碰撞（匹配视觉椭球大小：宽≈5格，高≈3格）
       const isWater = (
-        (col >= 5 && col <= 9 && row >= 5 && row <= 13) ||
-        (col >= W - 11 && col <= W - 3 && row >= H - 16 && row <= H - 3)
+        (col >= 5 && col <= 9 && row >= 7 && row <= 11) ||
+        (col >= W - 9 && col <= W - 5 && row >= H - 11 && row <= H - 7)
       );
 
       // 房屋碰撞 (9,9)-(13,12)

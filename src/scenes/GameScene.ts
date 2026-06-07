@@ -266,10 +266,15 @@ export class GameScene extends Phaser.Scene {
     this.mapManager.destroy();
     this.clearNPCs();
 
+    // 销毁旧水面波纹效果
+    this.waterRippleGfx?.destroy();
+    this.waterRippleGfx = undefined;
+
     this.mapManager = new MapManager(this, newMap);
     this.setupInteractions(newMap.id);
     this.setCameraBounds();
     this.renderNPCs(newMap);
+    this.createWaterEffects(newMap.id);  // 为新地图创建波纹（仅farm有效）
 
     this.player.sprite.setPosition(
       trans.toTileX * TILE_SIZE + TILE_SIZE / 2,

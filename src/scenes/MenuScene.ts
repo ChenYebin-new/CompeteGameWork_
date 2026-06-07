@@ -113,9 +113,9 @@ export class MenuScene extends Phaser.Scene {
     });
     btn.on('pointerdown', action);
 
-    // 脉冲呼吸动画（微妙的缩放）
+    // 脉冲呼吸动画（微妙的缩放，包含阴影保持同步）
     this.tweens.add({
-      targets: [btn, label],
+      targets: [shadow, btn, label],
       scaleX: 1.03, scaleY: 1.03,
       duration: 1500 + delay * 1.5,
       yoyo: true, repeat: -1,

@@ -4,7 +4,7 @@
 
 import type { SaveData } from '../types';
 
-const SAVE_VERSION = '0.1.0';
+const SAVE_VERSION = '0.3.0';
 const SAVE_KEY_PREFIX = 'embervale_save_';
 const MAX_SLOTS = 3;
 

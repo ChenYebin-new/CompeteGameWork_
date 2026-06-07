@@ -117,7 +117,7 @@ export class MenuScene extends Phaser.Scene {
     this.tweens.add({
       targets: [btn, label],
       scaleX: 1.03, scaleY: 1.03,
-      duration: 1500 + i * 300,
+      duration: 1500 + delay * 1.5,
       yoyo: true, repeat: -1,
       ease: 'Sine.easeInOut',
     });

@@ -18,8 +18,9 @@ import { PauseMenu } from '../ui/PauseMenu';
 import { createFarmMap } from '../maps/FarmMap';
 import { createTownMap } from '../maps/TownMap';
 import { createForestMap } from '../maps/ForestMap';
-import { ToolType } from '../types';
+import { ToolType, ItemCategory } from '../types';
 import type { GameMap, MapTransition } from '../types';
+import { ITEMS } from '../data/items';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -59,6 +60,15 @@ export class GameScene extends Phaser.Scene {
   private mapBgImages: Phaser.GameObjects.Image[] = [];
 
   private isTransitioning = false;
+  private isShuttingDown = false;
+
+  // 水面波纹效果
+  private waterRippleGfx?: Phaser.GameObjects.Graphics;
+  private waterRippleTime = 0;
+
+  // HUD体力进度条
+  private staminaBarBg!: Phaser.GameObjects.Rectangle;
+  private staminaBarFill!: Phaser.GameObjects.Rectangle;
 
   constructor() { super({ key: 'GameScene' }); }
 
@@ -100,31 +110,38 @@ export class GameScene extends Phaser.Scene {
     this.createHUD();
     this.createDialogueUI();
     this.renderNPCs(startMap);
+    this.createWaterEffects(startMap.id);
 
     this.timeSystem.onHourChange = () => { this.player.restoreStamina(2); };
 
-    // 安全关闭处理：返回标题时清理资源
-    this.events.on('shutdown', this.onShutdown, this);
-    this.events.once('shutdown', () => {
-      // 确保只执行一次
-    });
+    // 安全关闭处理：返回标题时清理资源（once 确保只触发一次）
+    this.events.once('shutdown', this.onShutdown, this);
 
     this.cameras.main.fadeIn(800, 0, 0, 0);
   }
 
-  // ========== 安全关闭 ==========
+  // ========== 安全关闭（防重入） ==========
   private onShutdown(): void {
+    if (this.isShuttingDown) return;
+    this.isShuttingDown = true;
     this.isTransitioning = true;
     this.timeSystem.pause();
-    this.mapManager.destroy();
+
+    // 销毁所有子系统
+    this.mapManager?.destroy();
+    this.cropSystem?.destroy();
+    this.weatherSystem?.destroy();
+    this.controller?.destroy();
+    this.player?.destroy();
+    this.waterRippleGfx?.destroy();
+
+    // 清理UI
     this.clearNPCs();
-    this.inventoryUI.close();
-    this.pauseMenu.close();
+    this.inventoryUI?.close();
+    this.pauseMenu?.close();
     this.dialogueBox?.setVisible(false);
     this.clearDialogueChoices();
     this.isInDialogue = false;
-    // 清理场景级事件
-    this.events.off('shutdown', this.onShutdown, this);
   }
 
   // ========== 存档数据收集 ==========
@@ -134,7 +151,7 @@ export class GameScene extends Phaser.Scene {
     this.cropSystem.plantedCrops.forEach((v, k) => { plantedCropsObj[k] = v; });
 
     return {
-      version: '0.2.0',
+      version: '0.3.0',
       timestamp: Date.now(),
       slotName: '',
       player: { ...this.player.state, inventory: [...this.player.state.inventory] },
@@ -188,6 +205,7 @@ export class GameScene extends Phaser.Scene {
     this.camTarget.setPosition(this.player.sprite.x, this.player.sprite.y);
     this.weatherSystem.update();
     this.cropSystem.update();
+    if (!this.isTransitioning) this.updateWaterEffects(delta);
 
     // 工具切换
     const k = this.input.keyboard!;
@@ -199,6 +217,18 @@ export class GameScene extends Phaser.Scene {
     }
     if (Phaser.Input.Keyboard.JustDown(k.addKey(Phaser.Input.Keyboard.KeyCodes.THREE))) {
       this.player.state.currentTool = ToolType.SCYTHE; this.showHint('工具：镰刀');
+    }
+    if (Phaser.Input.Keyboard.JustDown(k.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR))) {
+      const seedItem = this.player.state.inventory.find(s =>
+        s.itemId && s.quantity > 0 && ITEMS[s.itemId]?.category === ItemCategory.SEED
+      );
+      if (seedItem) {
+        this.player.state.currentTool = ToolType.SEED_BAG;
+        const itemName = ITEMS[seedItem.itemId]?.name ?? '种子';
+        this.showHint(`种植模式：${itemName}（按4切换种子类型）`);
+      } else {
+        this.showHint('背包没有种子！');
+      }
     }
 
     if (move.vx !== 0 || move.vy !== 0) this.checkMapTransition();
@@ -279,6 +309,27 @@ export class GameScene extends Phaser.Scene {
         this.player.addItem(r.itemId, r.quantity);
         this.showHint(`收获了作物！`);
       } else this.showHint('无可收获的作物');
+      return;
+    }
+    if (tool === ToolType.SEED_BAG) {
+      // 找到背包中第一个种子
+      const seedSlot = this.player.state.inventory.find(s =>
+        s.itemId && s.quantity > 0 && ITEMS[s.itemId]?.category === ItemCategory.SEED
+      );
+      if (!seedSlot) {
+        this.showHint('背包没有种子！按4切换工具');
+        return;
+      }
+      const seedItem = ITEMS[seedSlot.itemId];
+      if (this.cropSystem.plantSeed(tx, ty, seedSlot.itemId)) {
+        this.showHint(`种下了${seedItem.name}！`);
+        // 如果种子用完自动切回锄头
+        if (!this.player.hasItem(seedSlot.itemId, 1)) {
+          this.player.state.currentTool = ToolType.HOE;
+        }
+      } else {
+        this.showHint('此处无法种植（需要已耕地）');
+      }
     }
   }
 
@@ -315,6 +366,15 @@ export class GameScene extends Phaser.Scene {
         : this.add.rectangle(x, y, TILE_SIZE - 4, TILE_SIZE - 4, 0x888888);
       sprite.setDepth(9);
       this.npcSprites.set(npcPos.npcId, sprite);
+
+      // NPC 微呼吸动画
+      this.tweens.add({
+        targets: sprite,
+        scaleX: 1.03, scaleY: 1.03,
+        duration: 1800 + Math.random() * 400,
+        yoyo: true, repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
 
       const label = this.add.text(x, y - TILE_SIZE / 2 - 10, npcNames[npcPos.npcId] ?? npcPos.npcId, {
         fontSize: '11px', color: '#FFFFFF', stroke: '#000000', strokeThickness: 3,
@@ -365,13 +425,19 @@ export class GameScene extends Phaser.Scene {
       fontSize: '16px', color: '#4CAF50', fontFamily: 'serif',
     }).setScrollFactor(0).setDepth(101).setOrigin(1, 0);
 
+    // 体力进度条（右上角）
+    this.staminaBarBg = this.add.rectangle(GAME_WIDTH - 24, 30, 120, 6, 0x333333, 0.8)
+      .setScrollFactor(0).setDepth(101).setOrigin(1, 0);
+    this.staminaBarFill = this.add.rectangle(GAME_WIDTH - 26, 31, 116, 4, 0x4CAF50, 1)
+      .setScrollFactor(0).setDepth(102).setOrigin(1, 0);
+
     this.toolText = this.add.text(24, GAME_HEIGHT - 40, '', {
       fontSize: '13px', color: '#C49A3C', fontFamily: 'serif',
       backgroundColor: '#00000088', padding: { x: 10, y: 5 },
     }).setScrollFactor(0).setDepth(101);
 
     this.hintText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 60,
-      'WASD 移动 | E 交互 | 1-3 工具 | Tab 背包 | Esc 暂停',
+      'WASD 移动 | E 交互 | 1锄头 2水壶 3镰刀 4种子 | Tab 背包 | Esc 暂停',
       {
         fontSize: '14px', color: '#F5E6C8', fontFamily: 'serif',
         backgroundColor: '#00000088', padding: { x: 16, y: 8 },
@@ -385,11 +451,18 @@ export class GameScene extends Phaser.Scene {
     this.hudTimeText.setText(`${t.formatDate()} · ${t.formatTime()} | ${this.mapManager.currentMap.name}`);
     this.hudGoldText.setText(`💰 ${p.gold} 金币`);
     this.hudStaminaText.setText(`⚡ ${p.stamina}/${p.maxStamina}`);
-    const tn: Record<string, string> = { hoe: '锄头', watering_can: '水壶', scythe: '镰刀', axe: '斧头', pickaxe: '十字镐' };
-    this.toolText.setText(`工具：${tn[p.currentTool] ?? p.currentTool} [1/2/3切换]`);
+    const tn: Record<string, string> = { hoe: '锄头', watering_can: '水壶', scythe: '镰刀', axe: '斧头', pickaxe: '十字镐', seed_bag: '种子袋' };
+    this.toolText.setText(`工具：${tn[p.currentTool] ?? p.currentTool} [1/2/3/4切换]`);
     if (p.stamina < 30) this.hudStaminaText.setColor('#F44336');
     else if (p.stamina < 60) this.hudStaminaText.setColor('#FF9800');
     else this.hudStaminaText.setColor('#4CAF50');
+
+    // 体力进度条
+    const ratio = p.stamina / p.maxStamina;
+    this.staminaBarFill.setSize(116 * ratio, 4);
+    if (ratio < 0.3) this.staminaBarFill.setFillStyle(0xF44336, 1);
+    else if (ratio < 0.6) this.staminaBarFill.setFillStyle(0xFF9800, 1);
+    else this.staminaBarFill.setFillStyle(0x4CAF50, 1);
   }
 
   private showHint(text: string): void {
@@ -409,14 +482,25 @@ export class GameScene extends Phaser.Scene {
     bg.setName('dialogueBg');
     this.dialogueBox.add(bg);
 
-    this.dialogueNameText = this.add.text(-bw / 2 + 28, -bh / 2 + 16, '', {
+    // NPC头像区域（左侧圆形占位）
+    const avatarBg = this.add.rectangle(-bw / 2 + 52, 0, 72, 72, 0xD4C4A0, 0.9);
+    avatarBg.setStrokeStyle(2, 0x8B6914, 0.6);
+    avatarBg.setName('avatarBg');
+    this.dialogueBox.add(avatarBg);
+
+    const avatarIcon = this.add.text(-bw / 2 + 52, 0, '👤', {
+      fontSize: '28px',
+    }).setOrigin(0.5).setName('avatarIcon');
+    this.dialogueBox.add(avatarIcon);
+
+    this.dialogueNameText = this.add.text(-bw / 2 + 100, -bh / 2 + 16, '', {
       fontSize: '18px', fontFamily: 'serif', color: '#5C4033', fontStyle: 'bold',
     });
     this.dialogueBox.add(this.dialogueNameText);
 
-    this.dialogueText = this.add.text(-bw / 2 + 28, -bh / 2 + 50, '', {
+    this.dialogueText = this.add.text(-bw / 2 + 100, -bh / 2 + 50, '', {
       fontSize: '15px', fontFamily: 'serif', color: '#3C2E1F',
-      wordWrap: { width: bw - 60 }, lineSpacing: 5,
+      wordWrap: { width: bw - 130 }, lineSpacing: 5,
     });
     this.dialogueBox.add(this.dialogueText);
 
@@ -509,6 +593,47 @@ export class GameScene extends Phaser.Scene {
     return new Promise(r => this.time.delayedCall(ms, r));
   }
 
+  // ========== 水面波纹效果 ==========
+  private createWaterEffects(mapId: string): void {
+    if (mapId !== 'farm') return;
+
+    this.waterRippleGfx = this.add.graphics();
+    this.waterRippleGfx.setDepth(3); // 在水面之上
+    this.waterRippleTime = 0;
+  }
+
+  private updateWaterEffects(delta: number): void {
+    if (!this.waterRippleGfx) return;
+    this.waterRippleTime += delta;
+
+    const gfx = this.waterRippleGfx;
+    gfx.clear();
+
+    const map = this.mapManager.currentMap;
+    if (map.id !== 'farm') return;
+
+    const mw = map.width;
+    const mh = map.height;
+
+    // 两个水塘位置
+    const ponds = [
+      { cx: 7 * TILE_SIZE, cy: 9 * TILE_SIZE, r: 75 },
+      { cx: (mw - 7) * TILE_SIZE, cy: (mh - 9) * TILE_SIZE, r: 75 },
+    ];
+
+    const t = this.waterRippleTime * 0.001;
+    for (const pond of ponds) {
+      // 波纹圈
+      for (let i = 0; i < 2; i++) {
+        const phase = t * 1.5 + i * Math.PI / 2;
+        const alpha = 0.12 + 0.08 * Math.sin(phase);
+        const r = pond.r * (0.7 + 0.15 * Math.cos(phase * 0.7 + i));
+
+        gfx.fillStyle(0x88CCFF, alpha);
+        gfx.fillEllipse(pond.cx, pond.cy, r * 2, r * 1.5);
+      }
+    }
+  }
   getPlayer(): Player { return this.player; }
   getMapManager(): MapManager { return this.mapManager; }
 }

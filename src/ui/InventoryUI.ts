@@ -13,6 +13,7 @@ interface SlotElement {
   icon: Phaser.GameObjects.Rectangle;
   nameText: Phaser.GameObjects.Text;
   qtyText: Phaser.GameObjects.Text;
+  qualityDot: Phaser.GameObjects.Rectangle;  // 品质指示
 }
 
 export class InventoryUI {
@@ -117,8 +118,12 @@ export class InventoryUI {
         fontSize: '11px', color: '#FFD700',
       }).setOrigin(1, 1).setScrollFactor(0).setDepth(d + 4);
 
-      this.elements.push(nameText, qtyText);
-      this.slotElements.push({ bg: slotBg, icon, nameText, qtyText });
+      // 品质指示点（默认隐藏）
+      const qualityDot = this.scene.add.rectangle(cx + slotSize / 2 - 16, cy - slotSize / 2 + 10, 6, 6, 0xFFFFFF, 0)
+        .setScrollFactor(0).setDepth(d + 5);
+
+      this.elements.push(nameText, qtyText, qualityDot);
+      this.slotElements.push({ bg: slotBg, icon, nameText, qtyText, qualityDot });
 
       slotBg.setInteractive({ useHandCursor: true });
       slotBg.on('pointerover', () => {
@@ -158,20 +163,23 @@ export class InventoryUI {
 
     for (let i = 0; i < this.slotElements.length; i++) {
       const slot = this.player.state.inventory[i];
-      const { icon, nameText, qtyText } = this.slotElements[i];
+      const { icon, nameText, qtyText, qualityDot } = this.slotElements[i];
       if (slot?.itemId && slot.quantity > 0) {
         const item = ITEMS[slot.itemId];
-        // 物品图标颜色
+        // 物品图标颜色 + 内发光边框
         const iconColor = InventoryUI.ITEM_COLORS[slot.itemId] ?? 0x888888;
         icon.setFillStyle(iconColor, 0.8);
-        icon.setStrokeStyle(1, 0xFFD700, 0.6);
+        icon.setStrokeStyle(2, 0xFFD700, 0.6);
         nameText.setText(item?.name ?? slot.itemId);
         qtyText.setText(slot.quantity > 1 ? `x${slot.quantity}` : '');
+        // 品质指示（种子/作物根据类别显示边框色）
+        qualityDot.setFillStyle(0xFFFFFF, 0);
       } else {
         icon.setFillStyle(0x555555, 0);
         icon.setStrokeStyle(1, 0x888888, 0.5);
         nameText.setText('');
         qtyText.setText('');
+        qualityDot.setFillStyle(0xFFFFFF, 0);
       }
     }
   }

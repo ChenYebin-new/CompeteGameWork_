@@ -60,7 +60,9 @@ export class CropSystem {
     const frontTile = this.player.getFrontTile();
 
     // 工具高亮
-    if (this.player.state.currentTool === ToolType.HOE || this.player.state.currentTool === ToolType.WATERING_CAN) {
+    if (this.player.state.currentTool === ToolType.HOE ||
+        this.player.state.currentTool === ToolType.WATERING_CAN ||
+        this.player.state.currentTool === ToolType.SEED_BAG) {
       this.highlightRect.setPosition(
         frontTile.tileX * TILE_SIZE + TILE_SIZE / 2,
         frontTile.tileY * TILE_SIZE + TILE_SIZE / 2,
@@ -200,15 +202,35 @@ export class CropSystem {
   // ========== 渲染 ==========
 
   private renderTilledGround(tileX: number, tileY: number): void {
-    this.tillGraphics.fillStyle(0x6B4226, 1);
-    this.tillGraphics.fillRect(
-      tileX * TILE_SIZE + 2, tileY * TILE_SIZE + 2,
-      TILE_SIZE - 4, TILE_SIZE - 4,
-    );
+    const x = tileX * TILE_SIZE;
+    const y = tileY * TILE_SIZE;
+    const s = TILE_SIZE;
+
+    // 基底深色
+    this.tillGraphics.fillStyle(0x5C3A1E, 1);
+    this.tillGraphics.fillRect(x + 1, y + 1, s - 2, s - 2);
+
+    // 表土主色
+    this.tillGraphics.fillStyle(0x7B5236, 0.9);
+    this.tillGraphics.fillRect(x + 3, y + 3, s - 6, s - 6);
+
+    // 随机纹理线条（模拟犁沟）
+    const seed = (tileX * 31 + tileY * 17) % 13;
+    this.tillGraphics.lineStyle(1, 0x6B4226, 0.4);
+    for (let i = 0; i < 3; i++) {
+      const ly = y + 8 + (i * (s - 16)) / 2 + ((seed + i) % 5 - 2);
+      this.tillGraphics.lineBetween(x + 6, ly, x + s - 6, ly + ((seed + i * 3) % 3 - 1));
+    }
+
+    // 微小石块点缀
+    this.tillGraphics.fillStyle(0x8A7A6A, 0.3);
+    if (seed % 3 === 0) {
+      this.tillGraphics.fillCircle(x + 12 + (seed % 20), y + 12 + ((seed * 7) % 20), 2);
+    }
   }
 
   private renderCrop(tileX: number, tileY: number, planted: PlantedCrop, crop: CropData): void {
-    // 重绘所有作物（简单方案）
+    // 重绘所有作物（程序化渐变渲染）
     this.cropGraphics.clear();
 
     for (const [key, p] of this.plantedCrops) {
@@ -216,40 +238,58 @@ export class CropSystem {
       if (!c) continue;
 
       const [x, y] = key.split(',').map(Number);
-      const stageColors: Record<number, number> = {
-        [CropStage.SEED]: 0x8B6914,
-        [CropStage.SPROUT]: 0x6B8E23,
-        [CropStage.GROWING]: 0x556B2F,
-        [CropStage.MATURE]: 0x228B22,
-        [CropStage.HARVESTABLE]: crop.id === 'starberry' ? 0xFFD700 : 0x32CD32,
+      const cx = x * TILE_SIZE + TILE_SIZE / 2;
+      const cy = y * TILE_SIZE + TILE_SIZE / 2;
+
+      // 渐变颜色表（不同阶段使用自然色调）
+      const stageGradients: Record<number, { base: number; light: number; dark: number }> = {
+        [CropStage.SEED]:       { base: 0x8B6914, light: 0xC49A3C, dark: 0x5C3A0A },
+        [CropStage.SPROUT]:     { base: 0x6B8E23, light: 0x98D04A, dark: 0x3D6210 },
+        [CropStage.GROWING]:    { base: 0x228B22, light: 0x4CAF50, dark: 0x0D5A0D },
+        [CropStage.MATURE]:     { base: 0x2E8B57, light: 0x5CBF7F, dark: 0x1A5532 },
+        [CropStage.HARVESTABLE]: crop.id === 'starberry'
+          ? { base: 0xFFD700, light: 0xFFEC8B, dark: 0xB8860B }
+          : { base: 0x32CD32, light: 0x7CFC00, dark: 0x1E7B1E },
       };
 
-      const color = stageColors[p.currentStage] ?? 0x6B8E23;
+      const gc = stageGradients[p.currentStage] ?? stageGradients[CropStage.SPROUT];
 
-      // 种子阶段画小点
       if (p.currentStage === CropStage.SEED) {
-        this.cropGraphics.fillStyle(color, 1);
-        this.cropGraphics.fillCircle(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, 4);
+        // 种子阶段 - 画一个小土堆
+        this.cropGraphics.fillStyle(gc.dark, 0.9);
+        this.cropGraphics.fillEllipse(cx, cy + 3, 10, 6);
+        this.cropGraphics.fillStyle(gc.base, 0.8);
+        this.cropGraphics.fillCircle(cx, cy, 3);
       } else {
-        // 其他阶段画方块
-        const size = 8 + p.currentStage * 4;
-        this.cropGraphics.fillStyle(color, 1);
-        this.cropGraphics.fillRect(
-          x * TILE_SIZE + (TILE_SIZE - size) / 2,
-          y * TILE_SIZE + (TILE_SIZE - size) / 2,
-          size, size,
+        // 生长阶段 - 多层渐变模拟立体感
+        const size = 10 + p.currentStage * 4;
+        const half = Math.floor(size / 2);
+
+        // 阴影
+        this.cropGraphics.fillStyle(gc.dark, 0.5);
+        this.cropGraphics.fillEllipse(cx + 2, cy + 2, size + 2, size * 0.8);
+
+        // 主体
+        this.cropGraphics.fillStyle(gc.base, 0.85);
+        this.cropGraphics.fillRoundedRect(cx - half, cy - half, size, size, 3);
+
+        // 高光
+        this.cropGraphics.fillStyle(gc.light, 0.4);
+        this.cropGraphics.fillRoundedRect(
+          cx - half + 2, cy - half + 2,
+          Math.floor(size * 0.55), Math.floor(size * 0.45),
+          2,
         );
       }
 
-      // 品质指示（星号）
+      // 品质星光
       if (p.quality > 0) {
         const qColor = p.quality === 2 ? 0xFFD700 : 0xC0C0C0;
-        this.cropGraphics.fillStyle(qColor, 0.8);
-        this.cropGraphics.fillCircle(
-          x * TILE_SIZE + TILE_SIZE - 6,
-          y * TILE_SIZE + 6,
-          3,
-        );
+        this.cropGraphics.fillStyle(qColor, 0.9);
+        this.cropGraphics.fillCircle(cx + TILE_SIZE / 2 - 7, cy - TILE_SIZE / 2 + 7, 4);
+        // 发光外圈
+        this.cropGraphics.fillStyle(qColor, 0.25);
+        this.cropGraphics.fillCircle(cx + TILE_SIZE / 2 - 7, cy - TILE_SIZE / 2 + 7, 7);
       }
     }
   }
@@ -260,14 +300,29 @@ export class CropSystem {
     this.tillGraphics.clear();
     for (const key of this.tilledTiles) {
       const [tx, ty] = key.split(',').map(Number);
-      this.tillGraphics.fillStyle(0x6B4226, 1);
-      this.tillGraphics.fillRect(
-        tx * TILE_SIZE + 2, ty * TILE_SIZE + 2,
-        TILE_SIZE - 4, TILE_SIZE - 4,
-      );
+      const x = tx * TILE_SIZE;
+      const y = ty * TILE_SIZE;
+      const s = TILE_SIZE;
+
+      this.tillGraphics.fillStyle(0x5C3A1E, 1);
+      this.tillGraphics.fillRect(x + 1, y + 1, s - 2, s - 2);
+      this.tillGraphics.fillStyle(0x7B5236, 0.9);
+      this.tillGraphics.fillRect(x + 3, y + 3, s - 6, s - 6);
+
+      const seed = (tx * 31 + ty * 17) % 13;
+      this.tillGraphics.lineStyle(1, 0x6B4226, 0.4);
+      for (let i = 0; i < 3; i++) {
+        const ly = y + 8 + (i * (s - 16)) / 2 + ((seed + i) % 5 - 2);
+        this.tillGraphics.lineBetween(x + 6, ly, x + s - 6, ly + ((seed + i * 3) % 3 - 1));
+      }
+      if (seed % 3 === 0) {
+        this.tillGraphics.fillStyle(0x8A7A6A, 0.3);
+        this.tillGraphics.fillCircle(x + 12 + (seed % 20), y + 12 + ((seed * 7) % 20), 2);
+      }
     }
 
     this.cropGraphics.clear();
+    // 遍历所有作物重新渲染
     for (const [key, planted] of this.plantedCrops) {
       const crop = CROPS[planted.cropId];
       if (!crop) continue;

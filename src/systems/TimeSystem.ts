@@ -44,6 +44,10 @@ export class TimeSystem {
 
     this.accumulatedMs += delta * this.timeSpeed;
 
+    // 边界检查：防止 hour 异常溢出
+    if (this.time.hour < 0) this.time.hour = DAY_START_HOUR;
+    if (this.time.hour > 30) this.time.hour = DAY_END_HOUR;
+
     // 每500ms现实时间 = 1游戏分钟（timeSpeed=0.5时）
     const minuteStep = 500;
     let minutesChanged = false;

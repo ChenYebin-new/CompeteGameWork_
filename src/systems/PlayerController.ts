@@ -82,4 +82,12 @@ export class PlayerController {
     if (this.input.down) vy += 1;
     return { vx, vy };
   }
+
+  destroy(): void {
+    // 键盘对象由 Phaser 管理，无需手动清理
+    this.input = {
+      up: false, down: false, left: false, right: false,
+      interact: false, action1: false, inventory: false, pause: false,
+    };
+  }
 }

@@ -48,6 +48,7 @@ export enum ToolType {
   AXE = 'axe',
   PICKAXE = 'pickaxe',
   SCYTHE = 'scythe',
+  SEED_BAG = 'seed_bag',
 }
 
 export enum SceneKey {

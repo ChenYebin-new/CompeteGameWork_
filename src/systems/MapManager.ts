@@ -244,12 +244,8 @@ export class MapManager {
         x: bx + bw / 2, y: by + bh / 2,
         key: 'tileset_buildings',
       }, false);
-      // 裁剪 tileset 中的一部分（使用 crop 效果）
-      img.setCrop(
-        Phaser.Math.Between(0, srcW - bw),
-        Phaser.Math.Between(0, srcH - bh),
-        bw, bh,
-      );
+      // 使用确定性坐标裁剪 tileset（0,0 起始，不随机）
+      img.setCrop(0, 0, bw, bh);
       img.setDisplaySize(bw, bh);
       img.setAlpha(0.6);
       rt.draw(img);

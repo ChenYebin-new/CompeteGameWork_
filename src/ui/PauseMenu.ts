@@ -213,22 +213,13 @@ export class PauseMenu {
     this.savePanelElements = [];
   }
 
-  // ========== 返回标题（安全清理） ==========
+  // ========== 返回标题（安全清理，走Phaser生命周期） ==========
   private returnToTitle(): void {
     this.close();
     this.destroySavePanel();
-
-    // 通过 scene.events 通知 GameScene 清理资源
-    const gameScene = this.scene.scene.get(SceneKey.GAME);
-    if (gameScene) {
-      gameScene.events.emit('shutdown');
-    }
-
-    // 停止当前场景并返回主菜单
-    this.scene.time.delayedCall(100, () => {
-      this.scene.scene.stop(SceneKey.GAME);
-      this.scene.scene.start(SceneKey.MENU);
-    });
+    // 直接停止游戏场景 → Phaser 自动触发内置 shutdown → GameScene.onShutdown() 统一清理
+    this.scene.scene.stop(SceneKey.GAME);
+    this.scene.scene.start(SceneKey.MENU);
   }
 
   private setVisible(v: boolean): void {

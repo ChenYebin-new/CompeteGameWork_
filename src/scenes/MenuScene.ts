@@ -8,10 +8,9 @@ import { SceneKey } from '../types';
 import { SaveSystem } from '../systems/SaveSystem';
 
 export class MenuScene extends Phaser.Scene {
-  // 面板元素追踪
+  // 面板元素追踪（全部使用实例成员，避免静态残留）
   private panelElements: Phaser.GameObjects.GameObject[] = [];
-  private static menuElements: Phaser.GameObjects.GameObject[] = [];
-  private static titleElements: { title: Phaser.GameObjects.Text; sub: Phaser.GameObjects.Text; desc: Phaser.GameObjects.Text } | null = null;
+  private titleElements: { title: Phaser.GameObjects.Text; sub: Phaser.GameObjects.Text; desc: Phaser.GameObjects.Text } | null = null;
 
   constructor() { super({ key: SceneKey.MENU }); }
 
@@ -56,7 +55,7 @@ export class MenuScene extends Phaser.Scene {
       { fontSize: '15px', fontFamily: 'serif', color: '#8B7355' },
     ).setOrigin(0.5).setAlpha(0);
 
-    MenuScene.titleElements = { title, sub, desc };
+    this.titleElements = { title, sub, desc };
 
     this.tweens.add({ targets: title, alpha: 1, y: 230, duration: 1500, ease: 'Sine.easeOut' });
     this.tweens.add({ targets: sub, alpha: 1, duration: 1500, delay: 400 });
@@ -80,7 +79,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // 版本
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 40, 'v0.2.0 · Demo', {
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 40, 'v0.3.0 · Demo', {
       fontSize: '13px', color: '#555',
     }).setOrigin(0.5);
   }
@@ -113,6 +112,15 @@ export class MenuScene extends Phaser.Scene {
       label.setColor('#F5E6C8');
     });
     btn.on('pointerdown', action);
+
+    // 脉冲呼吸动画（微妙的缩放）
+    this.tweens.add({
+      targets: [btn, label],
+      scaleX: 1.03, scaleY: 1.03,
+      duration: 1500 + i * 300,
+      yoyo: true, repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
   }
 
   // ========== 读取存档面板 ==========

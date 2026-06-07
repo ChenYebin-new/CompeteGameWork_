@@ -31,6 +31,12 @@ export class MapManager {
   private renderToTexture(): void {
     const w = this.mapWidth;
     const h = this.mapHeight;
+    const texKey = this.currentMap.id + '_map_tex';
+
+    // 如果纹理已存在则先销毁（防止重复切换同一地图冲突）
+    if (this.scene.textures.exists(texKey)) {
+      this.scene.textures.remove(texKey);
+    }
 
     // 创建离屏 RenderTexture
     const rt = this.scene.add.renderTexture(0, 0, w, h);
@@ -67,12 +73,17 @@ export class MapManager {
     // 3. 绘制地形特征（水、建筑、特殊区域）
     this.drawTerrainToTexture(rt, w, h);
 
-    // 4. 将 RenderTexture 保存为静态 Image（性能更好）
-    rt.saveTexture(this.currentMap.id + '_map_tex');
+    // 4. 叠加建筑素材（使用 AI 图片）
+    if (this.scene.textures.exists('tileset_buildings') && this.currentMap.id === 'town') {
+      this.drawBuildingsToTexture(rt);
+    }
+
+    // 5. 将 RenderTexture 保存为静态 Image（性能更好）
+    rt.saveTexture(texKey);
     rt.destroy();
 
-    // 5. 显示纹理
-    this.mapTexture = this.scene.add.image(0, 0, this.currentMap.id + '_map_tex');
+    // 6. 显示纹理
+    this.mapTexture = this.scene.add.image(0, 0, texKey);
     this.mapTexture.setOrigin(0, 0);
     this.mapTexture.setDepth(-1);
   }
@@ -207,6 +218,45 @@ export class MapManager {
     g.strokeRect(4, 4, _tw - 8, _th - 8);
   }
 
+  // ========== 叠加 AI 建筑素材（城镇地图） ==========
+  private drawBuildingsToTexture(rt: Phaser.GameObjects.RenderTexture): void {
+    if (!this.scene.textures.exists('tileset_buildings')) return;
+
+    const tex = this.scene.textures.get('tileset_buildings');
+    const srcW = tex.source[0].width;
+    const srcH = tex.source[0].height;
+
+    // 从 tileset 中取建筑图像块（4x4或更大的格子）
+    // 将 tileset 视为一张图，取其中几块作为建筑
+    const buildingDefs = [
+      { tileX: 13, tileY: 11.5, w: 5, h: 4 },    // 图书馆位置
+      { tileX: 21.5, tileY: 11.5, w: 5, h: 4 },   // 客栈位置
+      { tileX: 31.5, tileY: 11.5, w: 5, h: 4 },   // 教堂位置
+    ];
+
+    for (const bd of buildingDefs) {
+      const bx = bd.tileX * TILE_SIZE;
+      const by = bd.tileY * TILE_SIZE;
+      const bw = bd.w * TILE_SIZE;
+      const bh = bd.h * TILE_SIZE;
+
+      const img = this.scene.make.image({
+        x: bx + bw / 2, y: by + bh / 2,
+        key: 'tileset_buildings',
+      }, false);
+      // 裁剪 tileset 中的一部分（使用 crop 效果）
+      img.setCrop(
+        Phaser.Math.Between(0, srcW - bw),
+        Phaser.Math.Between(0, srcH - bh),
+        bw, bh,
+      );
+      img.setDisplaySize(bw, bh);
+      img.setAlpha(0.6);
+      rt.draw(img);
+      img.destroy();
+    }
+  }
+
   // ========== 碰撞检测 ==========
 
   checkCollision(worldX: number, worldY: number): boolean {
@@ -233,5 +283,9 @@ export class MapManager {
 
   destroy(): void {
     this.mapTexture?.destroy();
+    const texKey = this.currentMap.id + '_map_tex';
+    if (this.scene.textures.exists(texKey)) {
+      this.scene.textures.remove(texKey);
+    }
   }
 }

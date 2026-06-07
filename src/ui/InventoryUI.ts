@@ -1,13 +1,16 @@
 // ============================================================
-// 余晖谷 Embervale - UI 背包界面 (1080p)
+// 余晖谷 Embervale - UI 背包界面 (1080p) + 图标 + 金币实时刷新
 // ============================================================
 
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../config/game';
 import { ITEMS } from '../data/items';
 import type { Player } from '../entities/Player';
+import type { ItemData } from '../types';
 
 interface SlotElement {
+  bg: Phaser.GameObjects.Rectangle;
+  icon: Phaser.GameObjects.Rectangle;
   nameText: Phaser.GameObjects.Text;
   qtyText: Phaser.GameObjects.Text;
 }
@@ -18,7 +21,18 @@ export class InventoryUI {
   private elements: Phaser.GameObjects.GameObject[] = [];
   private slotElements: SlotElement[] = [];
   private descText!: Phaser.GameObjects.Text;
+  private goldText!: Phaser.GameObjects.Text;
   private isVisible = false;
+
+  // 物品颜色映射（图标占位色）
+  private static ITEM_COLORS: Record<string, number> = {
+    seed_parsnip: 0x8B7355, seed_potato: 0xD4A76A, seed_tomato: 0xE84D3D,
+    seed_starberry: 0xFF69B4,
+    parsnip: 0xD4A574, potato: 0xC49A3C, tomato: 0xE8492D,
+    starberry: 0xFF1493, stone: 0x808080, wood: 0x8B6914,
+    fiber: 0x7B9E5A, hoe: 0x8B8B8B, watering_can: 0x4A90D9,
+    axe: 0xA0A0A0, pickaxe: 0x909090, scythe: 0x707070,
+  };
 
   constructor(scene: Phaser.Scene, player: Player) {
     this.scene = scene;
@@ -60,13 +74,12 @@ export class InventoryUI {
     }).setOrigin(1, 0).setScrollFactor(0).setDepth(d + 5);
     this.elements.push(closeHint);
 
-    // 金币显示
-    const goldText = this.scene.add.text(GAME_WIDTH / 2 - pw / 2 + 24, GAME_HEIGHT / 2 - ph / 2 + 24,
-      `💰 ${this.player.state.gold}`, {
-        fontSize: '13px', color: '#FFD700', fontFamily: 'serif',
-      },
+    // 金币显示（动态刷新）
+    this.goldText = this.scene.add.text(GAME_WIDTH / 2 - pw / 2 + 24, GAME_HEIGHT / 2 - ph / 2 + 24,
+      `💰 ${this.player.state.gold}`,
+      { fontSize: '13px', color: '#FFD700', fontFamily: 'serif' },
     ).setScrollFactor(0).setDepth(d + 5);
-    this.elements.push(goldText);
+    this.elements.push(this.goldText);
 
     // 描述
     this.descText = this.scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + ph / 2 - 60, '', {
@@ -75,7 +88,7 @@ export class InventoryUI {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(d + 5);
     this.elements.push(this.descText);
 
-    // 格子 6x4 (1080p: slotSize=80)
+    // 格子 6x4
     const cols = 6, rows = 4, slotSize = 80;
     const sx = GAME_WIDTH / 2 - (cols * slotSize) / 2 + slotSize / 2;
     const sy = GAME_HEIGHT / 2 - 100;
@@ -90,6 +103,12 @@ export class InventoryUI {
       slotBg.setScrollFactor(0).setDepth(d + 3);
       this.elements.push(slotBg);
 
+      // 物品图标（带颜色的矩形）
+      const icon = this.scene.add.rectangle(cx, cy - 8, 30, 30, 0x555555, 0);
+      icon.setStrokeStyle(1, 0x888888, 0.5);
+      icon.setScrollFactor(0).setDepth(d + 3);
+      this.elements.push(icon);
+
       const nameText = this.scene.add.text(cx, cy + 22, '', {
         fontSize: '10px', color: '#F5E6C8', fontFamily: 'serif',
       }).setOrigin(0.5).setScrollFactor(0).setDepth(d + 4);
@@ -99,15 +118,20 @@ export class InventoryUI {
       }).setOrigin(1, 1).setScrollFactor(0).setDepth(d + 4);
 
       this.elements.push(nameText, qtyText);
-      this.slotElements.push({ nameText, qtyText });
+      this.slotElements.push({ bg: slotBg, icon, nameText, qtyText });
 
-      slotBg.setInteractive();
+      slotBg.setInteractive({ useHandCursor: true });
       slotBg.on('pointerover', () => {
         const s = this.player.state.inventory[idx];
         if (s?.itemId) {
           const item = ITEMS[s.itemId];
-          if (item) this.descText.setText(item.description);
+          if (item) this.descText.setText(`「${item.name}」${item.description}\n售价: ${item.sellPrice}G · 买入: ${item.buyPrice}G`);
+          slotBg.setFillStyle(0x5C3E2F);
         }
+      });
+      slotBg.on('pointerout', () => {
+        slotBg.setFillStyle(0x3C2E1F, 0.8);
+        this.descText.setText('');
       });
     }
 
@@ -129,14 +153,23 @@ export class InventoryUI {
   }
 
   refresh(): void {
+    // 刷新金币
+    this.goldText.setText(`💰 ${this.player.state.gold}`);
+
     for (let i = 0; i < this.slotElements.length; i++) {
       const slot = this.player.state.inventory[i];
-      const { nameText, qtyText } = this.slotElements[i];
+      const { icon, nameText, qtyText } = this.slotElements[i];
       if (slot?.itemId && slot.quantity > 0) {
         const item = ITEMS[slot.itemId];
+        // 物品图标颜色
+        const iconColor = InventoryUI.ITEM_COLORS[slot.itemId] ?? 0x888888;
+        icon.setFillStyle(iconColor, 0.8);
+        icon.setStrokeStyle(1, 0xFFD700, 0.6);
         nameText.setText(item?.name ?? slot.itemId);
         qtyText.setText(slot.quantity > 1 ? `x${slot.quantity}` : '');
       } else {
+        icon.setFillStyle(0x555555, 0);
+        icon.setStrokeStyle(1, 0x888888, 0.5);
         nameText.setText('');
         qtyText.setText('');
       }

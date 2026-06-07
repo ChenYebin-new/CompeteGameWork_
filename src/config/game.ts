@@ -42,6 +42,9 @@ export const INITIAL_PLAYER = {
   inventorySize: 24,
 };
 
+/** 每小时体力恢复量 */
+export const STAMINA_REGEN_PER_HOUR = 2;
+
 /** 体力消耗 */
 export const STAMINA_COST = {
   HOE: 5,

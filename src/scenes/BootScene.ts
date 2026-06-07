@@ -8,7 +8,6 @@ import { SceneKey } from '../types';
 
 export class BootScene extends Phaser.Scene {
   private loadingText!: Phaser.GameObjects.Text;
-  private loadCount = 0;
 
   constructor() { super({ key: SceneKey.BOOT }); }
 
@@ -52,9 +51,9 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.loadingText.setText('生成角色...');
+    this.loadingText.setText('生成角色…');
 
-    // 生成像素风玩家精灵（四方向）
+    // 生成像素风玩家精灵（四方向 × 4帧动画）
     this.generatePlayerSprites();
 
     // 生成像素风NPC精灵
@@ -68,74 +67,106 @@ export class BootScene extends Phaser.Scene {
   }
 
   // ========================================
-  // 像素风玩家精灵 (TILE_SIZE宽 x TILE_SIZE*1.25高)
+  // 像素风玩家精灵 - 四方向 × 4帧行走动画
   // ========================================
   private generatePlayerSprites(): void {
     const pw = TILE_SIZE;
     const ph = Math.floor(TILE_SIZE * 1.25); // 48 x 60
 
-    // 生成四个方向的玩家精灵（简化：只区分正面/侧面颜色）
+    // 四方向，每个方向4帧动画
     for (const dir of ['down', 'up', 'left', 'right']) {
-      const g = this.add.graphics();
-
-      const cropX = 11, cropW = 26;
-      const bodyTop = 20, bodyH = 30;
-
-      // --- 阴影（圆形） ---
-      g.fillStyle(0x000000, 0.2);
-      g.fillEllipse(pw / 2, ph - 4, pw - 8, 12);
-
-      // --- 鞋子 ---
-      g.fillStyle(0x3A2A1A, 1);
-      g.fillRect(14, ph - 10, 8, 8);
-      g.fillRect(pw - 22, ph - 10, 8, 8);
-
-      // --- 裤子 ---
-      g.fillStyle(0x4A6FA5, 1);
-      g.fillRect(cropX + 1, bodyTop + 16, cropW - 2, 14);
-
-      // --- 上衣（绿色农夫衬衫） ---
-      g.fillStyle(0x5B8C5A, 1);
-      g.fillRect(cropX, bodyTop, cropW, 16);
-
-      // --- 手臂 ---
-      g.fillStyle(0xFFDAB9, 1);
-      g.fillRect(4, bodyTop, 7, 20);
-      g.fillRect(pw - 11, bodyTop, 7, 20);
-
-      // --- 领口 ---
-      g.fillStyle(0x8B6B4A, 1);
-      g.fillRect(cropX + 8, bodyTop, 10, 4);
-
-      // --- 头部 ---
-      const headY = 4, headH = 18;
-      g.fillStyle(0xFFDAB9, 1);
-      g.fillRect(cropX + 2, headY, cropW - 4, headH);
-
-      // --- 头发（棕色长发/马尾） ---
-      g.fillStyle(0x6B4226, 1);
-      g.fillRect(cropX + 1, headY, cropW - 2, 10);
-      // 马尾辫
-      g.fillRect(pw - 8, headY + 6, 5, 5);
-
-      // --- 眼睛 ---
-      g.fillStyle(0x000000, 1);
-      g.fillRect(cropX + 6, headY + 7, 3, 3);
-      g.fillRect(cropX + cropW - 11, headY + 7, 3, 3);
-
-      // --- 草帽 ---
-      g.fillStyle(0xDAA520, 1);
-      g.fillRect(cropX - 1, headY - 2, cropW + 2, 6);
-      g.fillStyle(0xC49A3C, 0.6);
-      g.fillRect(cropX - 2, headY - 4, cropW + 4, 4);
-
-      // 侧面朝向微调（左右翻转时做镜像）
-      const flipX = (dir === 'right');
-
-      g.generateTexture('player_' + dir, pw, ph);
-      g.destroy();
-      this.loadCount++;
+      for (let frame = 0; frame < 4; frame++) {
+        this.drawPlayerFrame(dir, frame, pw, ph);
+      }
     }
+  }
+
+  private drawPlayerFrame(dir: string, frame: number, pw: number, ph: number): void {
+    const g = this.add.graphics();
+    const cropX = 11, cropW = 26;
+    const bodyTop = 20;
+    const headY = 4, headH = 18;
+
+    // 行走时身体上下微移
+    const bodyBob = (frame === 1 || frame === 3) ? 0 : 1;
+
+    // --- 阴影 ---
+    g.fillStyle(0x000000, 0.2);
+    g.fillEllipse(pw / 2, ph - 4, pw - 8, 12);
+
+    // --- 腿部动画 ---
+    g.fillStyle(0x3A2A1A, 1);
+    // 左腿
+    const leftLegX = 14;
+    const leftLegOff = (frame === 1) ? 2 : (frame === 3) ? -2 : 0;
+    g.fillRect(leftLegX + leftLegOff, ph - 10, 7, 8);
+    // 右腿
+    const rightLegX = pw - 21;
+    const rightLegOff = (frame === 1) ? -2 : (frame === 3) ? 2 : 0;
+    g.fillRect(rightLegX + rightLegOff, ph - 10, 7, 8);
+
+    // --- 裤子 ---
+    g.fillStyle(0x4A6FA5, 1);
+    g.fillRect(cropX + 1, bodyTop + 16 + bodyBob, cropW - 2, 14);
+
+    // --- 上衣 ---
+    g.fillStyle(0x5B8C5A, 1);
+    g.fillRect(cropX, bodyTop + bodyBob, cropW, 16);
+
+    // --- 手臂动画（前后摆动） ---
+    g.fillStyle(0xFFDAB9, 1);
+    const armSwing = (frame === 1) ? 2 : (frame === 3) ? -2 : 0;
+    g.fillRect(4 + armSwing, bodyTop + bodyBob, 7, 20);
+    g.fillRect(pw - 11 - armSwing, bodyTop + bodyBob, 7, 20);
+
+    // --- 领口 ---
+    g.fillStyle(0x8B6B4A, 1);
+    g.fillRect(cropX + 8, bodyTop + bodyBob, 10, 4);
+
+    // --- 头部 ---
+    g.fillStyle(0xFFDAB9, 1);
+    g.fillRect(cropX + 2, headY + bodyBob, cropW - 4, headH);
+
+    // --- 头发 ---
+    g.fillStyle(0x6B4226, 1);
+    g.fillRect(cropX + 1, headY + bodyBob, cropW - 2, 10);
+    // 马尾辫（左右方向镜像）
+    if (dir === 'right') {
+      g.fillRect(pw - 8, headY + bodyBob + 6, 5, 5);
+    } else if (dir === 'left') {
+      g.fillRect(3, headY + bodyBob + 6, 5, 5);
+    } else {
+      g.fillRect(pw - 8, headY + bodyBob + 6, 5, 5);
+    }
+
+    // --- 眼睛 ---
+    g.fillStyle(0x000000, 1);
+    if (dir === 'left') {
+      g.fillRect(cropX + 4, headY + bodyBob + 7, 3, 3);
+      g.fillRect(cropX + 12, headY + bodyBob + 7, 3, 3);
+    } else if (dir === 'right') {
+      g.fillRect(cropX + 10, headY + bodyBob + 7, 3, 3);
+      g.fillRect(cropX + 18, headY + bodyBob + 7, 3, 3);
+    } else {
+      g.fillRect(cropX + 6, headY + bodyBob + 7, 3, 3);
+      g.fillRect(cropX + cropW - 11, headY + bodyBob + 7, 3, 3);
+    }
+
+    // --- 草帽 ---
+    g.fillStyle(0xDAA520, 1);
+    g.fillRect(cropX - 1, headY + bodyBob - 2, cropW + 2, 6);
+    g.fillStyle(0xC49A3C, 0.6);
+    g.fillRect(cropX - 2, headY + bodyBob - 4, cropW + 4, 4);
+
+    // 如果是 up 方向，微调（背面看不到脸）
+    if (dir === 'up') {
+      // 用头发覆盖面部区域
+      g.fillStyle(0x6B4226, 1);
+      g.fillRect(cropX + 1, headY + bodyBob, cropW - 2, 14);
+    }
+
+    g.generateTexture('player_' + dir + '_' + frame, pw, ph);
+    g.destroy();
   }
 
   // ========================================

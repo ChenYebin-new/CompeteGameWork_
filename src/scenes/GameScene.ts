@@ -72,8 +72,6 @@ export class GameScene extends Phaser.Scene {
     this.mapManager = new MapManager(this, startMap);
     this.setupInteractions(startMap.id);
 
-    // 地图已由 MapManager 在构造函数中渲染
-
     const startTX = Math.floor(startMap.width / 2);
     const startTY = Math.floor(startMap.height / 2);
     this.player = new Player(this, startTX, startTY);
@@ -85,19 +83,83 @@ export class GameScene extends Phaser.Scene {
     this.cropSystem = new CropSystem(this, this.timeSystem, this.player);
     this.weatherSystem = new WeatherSystem(this, this.timeSystem);
 
+    // 检查是否有加载的存档数据
+    const loadedSave = this.registry.get('loadedSave') as import('../types').SaveData | undefined;
+    if (loadedSave) {
+      this.applyLoadedSave(loadedSave);
+      this.registry.remove('loadedSave');
+    }
+
     this.camTarget = this.add.container(this.player.sprite.x, this.player.sprite.y);
     this.cameras.main.startFollow(this.camTarget, true, 0.1, 0.1);
     this.setCameraBounds();
 
     this.inventoryUI = new InventoryUI(this, this.player);
     this.pauseMenu = new PauseMenu(this);
+    this.pauseMenu.setSaveDataProvider(() => this.collectSaveData());
     this.createHUD();
     this.createDialogueUI();
     this.renderNPCs(startMap);
 
     this.timeSystem.onHourChange = () => { this.player.restoreStamina(2); };
 
+    // 安全关闭处理：返回标题时清理资源
+    this.events.on('shutdown', this.onShutdown, this);
+    this.events.once('shutdown', () => {
+      // 确保只执行一次
+    });
+
     this.cameras.main.fadeIn(800, 0, 0, 0);
+  }
+
+  // ========== 安全关闭 ==========
+  private onShutdown(): void {
+    this.isTransitioning = true;
+    this.timeSystem.pause();
+    this.mapManager.destroy();
+    this.clearNPCs();
+    this.inventoryUI.close();
+    this.pauseMenu.close();
+    this.dialogueBox?.setVisible(false);
+    this.clearDialogueChoices();
+    this.isInDialogue = false;
+    // 清理场景级事件
+    this.events.off('shutdown', this.onShutdown, this);
+  }
+
+  // ========== 存档数据收集 ==========
+  private collectSaveData(): import('../types').SaveData {
+    // 将 Map 转为普通对象以便 JSON 序列化
+    const plantedCropsObj: { [key: string]: import('../types').PlantedCrop } = {};
+    this.cropSystem.plantedCrops.forEach((v, k) => { plantedCropsObj[k] = v; });
+
+    return {
+      version: '0.2.0',
+      timestamp: Date.now(),
+      slotName: '',
+      player: { ...this.player.state, inventory: [...this.player.state.inventory] },
+      time: { ...this.timeSystem.time },
+      weather: this.timeSystem.currentWeather,
+      plantedCrops: plantedCropsObj,
+      relationships: [],
+      storyFlags: {},
+      activeQuests: [],
+      completedQuests: [],
+      farmLevel: 1,
+    };
+  }
+
+  private applyLoadedSave(data: import('../types').SaveData): void {
+    // 恢复玩家状态
+    this.player.state.gold = data.player.gold;
+    this.player.state.stamina = data.player.stamina;
+    this.player.state.maxStamina = data.player.maxStamina;
+    this.player.state.inventory = data.player.inventory;
+    this.player.state.currentTool = data.player.currentTool;
+    this.player.sprite.setPosition(data.player.position.x, data.player.position.y);
+    // 恢复时间
+    this.timeSystem.time = { ...data.time };
+    this.timeSystem.currentWeather = data.weather;
   }
 
   // ========== 主循环 ==========
